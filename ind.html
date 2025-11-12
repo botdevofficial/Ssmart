@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Secure Device Verification</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Configure Tailwind for custom theme -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'primary': '#4f46e5',
+                        'success': '#10b981',
+                        'fail': '#ef4444',
+                        'bg-dark': '#0f172a'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Custom styles for the message box */
+        .message-box {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            max-width: 90%;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body class="bg-bg-dark text-white min-h-screen flex items-center justify-center font-sans p-4">
+
+    <div class="w-full max-w-lg bg-gray-800 p-8 rounded-xl shadow-2xl border-t-4 border-primary">
+        <h1 class="text-3xl font-extrabold text-center mb-6 text-primary">Secure Device Access Verification</h1>
+        <p class="text-center text-gray-400 mb-8">
+            Checking device fingerprint and unique ID for access control.
+        </p>
+
+        <!-- Status Card -->
+        <div id="status-card" class="p-6 bg-gray-700 rounded-lg shadow-xl mb-6 flex items-center space-x-4 transition-all duration-300">
+            <svg id="status-icon-loading" class="animate-spin h-8 w-8 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <div id="status-text-container">
+                <p id="status-heading" class="text-xl font-semibold">Processing...</p>
+                <p id="status-detail" class="text-sm text-gray-400">Fetching public IP and communicating with secure server...</p>
+            </div>
+        </div>
+
+        <!-- Details Section -->
+        <div class="bg-gray-700 p-6 rounded-lg">
+            <h2 class="text-lg font-bold mb-4 border-b border-gray-600 pb-2">Client Details</h2>
+            <div class="space-y-2 text-sm">
+                <p><strong>Verification Status:</strong> <span id="verification-status" class="font-bold text-yellow-500">PENDING</span></p>
+                <p><strong>Device ID (Cache):</strong> <span id="local-id" class="font-mono text-yellow-300">N/A</span></p>
+                <p><strong>Public IP (Frontend Fetch):</strong> <span id="client-ip" class="font-mono text-blue-300">N/A</span></p>
+                <p><strong>Server IP Recorded:</strong> <span id="server-ip" class="font-mono text-blue-300">N/A</span></p>
+                <p><strong>User Agent Recorded:</strong> <span id="user-agent" class="text-xs text-gray-300 break-all">N/A</span></p>
+            </div>
+            <button onclick="copyToClipboard(document.getElementById('local-id').textContent)"
+                    class="mt-4 w-full bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg transition duration-150 ease-in-out shadow-md">
+                Copy Device ID
+            </button>
+            <button onclick="clearCacheAndReload()"
+                    class="mt-2 w-full bg-red-800 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-150 ease-in-out shadow-md text-xs">
+                Clear Local ID (Test Cache Bypass)
+            </button>
+        </div>
+    </div>
+
+    <!-- Custom Message Box Container -->
+    <div id="message-container" class="message-box"></div>
+
+    <script>
+        const API_URL = 'http://127.0.0.1:5000/verify-device'; 
+        const IPIFY_URL = 'https://api.ipify.org?format=json';
+        const LOCAL_STORAGE_KEY = 'uniqueDeviceId';
+
+        // --- UI Element References ---
+        const statusCard = document.getElementById('status-card');
+        const statusHeading = document.getElementById('status-heading');
+        const statusDetail = document.getElementById('status-detail');
+        const statusIconLoading = document.getElementById('status-icon-loading');
+        const localIdSpan = document.getElementById('local-id');
+        const verificationStatusSpan = document.getElementById('verification-status');
+        const messageContainer = document.getElementById('message-container');
+        const clientIpSpan = document.getElementById('client-ip');
+        const serverIpSpan = document.getElementById('server-ip');
+        const userAgentSpan = document.getElementById('user-agent');
+        
+        // --- Helper Functions ---
+        
+        function clearCacheAndReload() {
+            localStorage.removeItem(LOCAL_STORAGE_KEY);
+            showMessage('primary', 'Cache Cleared', 'Local ID removed. Refreshing to test fingerprint check...');
+            setTimeout(() => {
+                window.location.reload();
+            }, 1000);
+        }
+
+        /** Displays a custom temporary message box instead of alert() */
+        function showMessage(type, title, text) {
+            const colorClass = type === 'success' ? 'bg-success border-success' : type === 'fail' ? 'bg-fail border-fail' : 'bg-primary border-primary';
+
+            const messageHtml = `
+                <div class="p-4 rounded-lg shadow-lg border-l-4 ${colorClass} bg-opacity-90 mt-2">
+                    <div class="flex items-center">
+                        <svg class="w-6 h-6 text-white mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            ${type === 'success' ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>' : type === 'fail' ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path>' : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>'}
+                        </svg>
+                        <div>
+                            <p class="font-bold text-white">${title}</p>
+                            <p class="text-sm text-gray-100">${text}</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+            const messageElement = document.createElement('div');
+            messageElement.innerHTML = messageHtml;
+            messageContainer.prepend(messageElement);
+
+            setTimeout(() => {
+                messageElement.remove();
+            }, 5000);
+        }
+        
+        /** Copies text to the clipboard using the synchronous execCommand fallback. */
+        function copyToClipboard(text) {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed'; 
+            document.body.appendChild(textarea);
+            textarea.select();
+            
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    showMessage('success', 'Copied!', `Device ID ${text.substring(0, 8)}... copied to clipboard.`);
+                } else {
+                    showMessage('fail', 'Copy Failed', 'Unable to copy text. Please try manually.');
+                }
+            } catch (err) {
+                showMessage('fail', 'Copy Error', 'An error occurred during copy operation.');
+            }
+            document.body.removeChild(textarea);
+        }
+
+        /** Fetches the public IP address from a third-party service. */
+        async function getPublicIP() {
+            try {
+                const response = await fetch(IPIFY_URL);
+                if (!response.ok) throw new Error("IPify API failed");
+                const data = await response.json();
+                return data.ip || null;
+            } catch (error) {
+                console.warn("Could not reliably fetch public IP from ipify:", error);
+                return 'UNKNOWN_CLIENT_IP'; 
+            }
+        }
+
+        // --- Main Logic ---
+        async function verifyDevice() {
+            let clientDeviceId = localStorage.getItem(LOCAL_STORAGE_KEY);
+            localIdSpan.textContent = clientDeviceId || 'New Device (No ID)';
+            
+            // 1. Get the public IP before calling the backend
+            const publicIP = await getPublicIP();
+            clientIpSpan.textContent = publicIP;
+
+            try {
+                // 2. Prepare payload for backend
+                const payload = {
+                    client_device_id: clientDeviceId,
+                    public_ip: publicIP // Send the client-fetched public IP
+                };
+
+                // 3. Send verification request to Python backend
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Server returned status: ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                // COMMON UPDATE: Display recorded IP and User Agent from the server response
+                serverIpSpan.textContent = data.ip_address || 'N/A';
+                userAgentSpan.textContent = data.user_agent || 'N/A';
+
+                // 4. Handle backend response based on status and action
+                
+                let successType = false;
+
+                if (data.status === 'verified') {
+                    // Scenario C: New Device Access
+                    
+                    if (data.action === 'save') {
+                        localStorage.setItem(LOCAL_STORAGE_KEY, data.device_id);
+                        localIdSpan.textContent = data.device_id;
+                    }
+                    
+                    statusHeading.textContent = "VERIFIED (New Registration)";
+                    statusDetail.textContent = "Device fingerprint and ID successfully registered.";
+                    showMessage('success', 'Verification Success', 'Welcome! Your device is now registered.');
+                    successType = true;
+
+                } else if (data.status === 'failed') {
+                    // Scenario A or B: Duplicate Access Detected
+                    
+                    if (data.action === 'resave') {
+                        // Scenario B: Cache cleared, but fingerprint matched an old record.
+                        localStorage.setItem(LOCAL_STORAGE_KEY, data.device_id);
+                        localIdSpan.textContent = data.device_id;
+                        statusHeading.textContent = "VERIFICATION FAILED (Cache Bypassed)";
+                        statusDetail.textContent = "Device fingerprint matched existing record. Access denied. Old ID re-saved to cache.";
+                        showMessage('fail', 'Access Denied', 'Verification failed: Device detected as already registered (ID re-saved).');
+                    } else {
+                        // Scenario A: ID was sent and matched the DB record.
+                        statusHeading.textContent = "VERIFICATION FAILED (Duplicate Access)";
+                        statusDetail.textContent = "This unique device ID is already registered. Access denied.";
+                        showMessage('fail', 'Access Denied', 'Verification failed: Device already registered.');
+                    }
+                }
+                
+                // Update final UI styling
+                statusCard.classList.remove('border-primary', 'border-success', 'border-fail');
+                statusIconLoading.classList.remove('animate-spin', 'text-primary');
+
+                if (successType) {
+                    statusCard.classList.add('border-success');
+                    verificationStatusSpan.classList.remove('text-yellow-500', 'text-fail');
+                    verificationStatusSpan.classList.add('text-success');
+                    verificationStatusSpan.textContent = "SUCCESS";
+                } else {
+                    statusCard.classList.add('border-fail');
+                    verificationStatusSpan.classList.remove('text-yellow-500', 'text-success');
+                    verificationStatusSpan.classList.add('text-fail');
+                    verificationStatusSpan.textContent = "FAILED";
+                }
+
+            } catch (error) {
+                console.error('Verification Error:', error);
+                
+                statusCard.classList.remove('border-primary', 'border-success', 'border-fail');
+                statusCard.classList.add('border-gray-500');
+                statusIconLoading.classList.remove('animate-spin', 'text-primary');
+                
+                statusHeading.textContent = "CONNECTION ERROR";
+                statusDetail.textContent = "Could not reach the verification server or API. Check console for details.";
+                
+                verificationStatusSpan.textContent = "ERROR";
+                showMessage('fail', 'Network Error', 'The application could not connect to the Python backend.');
+            }
+        }
+
+        // Run the verification process when the page loads
+        document.addEventListener('DOMContentLoaded', verifyDevice);
+    </script>
+</body>
+</html>
